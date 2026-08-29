@@ -1,21 +1,62 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 import api from '../lib/api';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [userProfile, setUserProfile] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
 
-  const fetchProfile = async () => {
+  const {
+    user: auth0User,
+    isAuthenticated: isAuth0Authenticated,
+    isLoading: isAuth0Loading,
+    loginWithRedirect,
+    logout: auth0Logout,
+  } = useAuth0();
+
+  const syncAuth0User = useCallback(async (user) => {
+    if (!user) return;
     try {
       const { data } = await api.get('/api/auth/me');
       setUserProfile(data);
     } catch {
-      setUserProfile(null);
+      setUserProfile({
+        id: user.sub,
+        email: user.email,
+        name: user.name || user.nickname || user.email,
+        avatar_url: user.picture,
+        role: user['https://projecthall.com/roles']?.[0] || user.role || 'student',
+        permissions: user['https://projecthall.com/permissions'] || ['projects:read', 'projects:create', 'projects:write', 'projects:like'],
+      });
     } finally {
-      setIsLoading(false);
+      setIsProfileLoading(false);
     }
+  }, []);
+
+  const fetchProfile = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/auth/me');
+      setUserProfile(data);
+    } catch {
+      if (isAuth0Authenticated && auth0User) {
+        syncAuth0User(auth0User);
+      } else {
+        setUserProfile(null);
+      }
+    } finally {
+      setIsProfileLoading(false);
+    }
+  }, [isAuth0Authenticated, auth0User, syncAuth0User]);
+
+  const loginWithAuth0 = () => {
+    const callbackUrl = import.meta.env.VITE_AUTH0_CALLBACK_URL || `${window.location.origin}/callback`;
+    return loginWithRedirect({
+      authorizationParams: {
+        redirect_uri: callbackUrl,
+      },
+    });
   };
 
   const login = async (email, password) => {
@@ -31,23 +72,53 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await api.post('/api/auth/revoke');
-    } catch (err) {
-      // Continue logout even if revoke fails
+    } catch {
     }
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('id_token');
     setUserProfile(null);
-    setIsLoading(false);
+
+    if (isAuth0Authenticated) {
+      auth0Logout({
+        logoutParams: {
+          returnTo: window.location.origin,
+        },
+      });
+    }
   };
 
   useEffect(() => {
-    fetchProfile();
+    if (!isAuth0Loading) {
+      if (isAuth0Authenticated && auth0User) {
+        syncAuth0User(auth0User);
+      } else {
+        fetchProfile();
+      }
+    }
 
     const handleLogoutEvent = () => setUserProfile(null);
     window.addEventListener('auth-logout', handleLogoutEvent);
     return () => window.removeEventListener('auth-logout', handleLogoutEvent);
-  }, []);
+  }, [isAuth0Loading, isAuth0Authenticated, auth0User, syncAuth0User, fetchProfile]);
+
+  const isLoading = isAuth0Loading || (isProfileLoading && !userProfile);
 
   return (
-    <AuthContext.Provider value={{ userProfile, isLoading, login, signup, logout, fetchProfile, setUserProfile }}>
+    <AuthContext.Provider
+      value={{
+        userProfile,
+        isLoading,
+        login,
+        signup,
+        logout,
+        loginWithAuth0,
+        fetchProfile,
+        setUserProfile,
+        syncAuth0User,
+        isAuth0Authenticated,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api, { API_URL } from '../lib/api';
+import { ShieldCheck } from '@phosphor-icons/react';
 
 export default function Login() {
-  const { login, signup } = useAuth();
+  const { login, signup, loginWithAuth0 } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [role, setRole] = useState('3'); // 3: Student, 2: Recruiter
+  const [role, setRole] = useState('3');
   const [otpSent, setOtpSent] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -69,6 +70,24 @@ export default function Login() {
           {msg.text && (
             <div className={`mb-4 p-2 text-xs rounded border ${msg.type === 'error' ? 'bg-destructive/10 text-destructive border-destructive/20' : 'bg-green-500/10 text-green-500 border-green-500/20'}`}>{msg.text}</div>
           )}
+          <div className="mb-4">
+            <Button
+              type="button"
+              className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/90 font-medium"
+              onClick={loginWithAuth0}
+            >
+              <ShieldCheck size={18} />
+              Log in with Auth0 (SSO)
+            </Button>
+          </div>
+          <div className="relative mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-3 bg-muted">
               <TabsTrigger value="login">Password</TabsTrigger>

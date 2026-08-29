@@ -1,9 +1,11 @@
 import React, { useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import Auth0Callback from './components/Auth0Callback';
 
-function AppContent() {
+function MainApp() {
   const { userProfile, isLoading, fetchProfile } = useAuth();
 
   useEffect(() => {
@@ -37,7 +39,11 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <Routes>
+        <Route path="/callback" element={<Auth0Callback />} />
+        <Route path="/" element={<MainApp />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </AuthProvider>
   );
 }
