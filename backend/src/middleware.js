@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
+import xss from 'xss';
 import keys from './keys.js';
 import { db } from './db.js';
 
@@ -12,6 +13,26 @@ const jwksClient = auth0Domain
       jwksUri: `https://${auth0Domain}/.well-known/jwks.json`,
     })
   : null;
+
+export const sanitizeXSS = (req, _res, next) => {
+  const sanitizeValue = (val) => {
+    if (typeof val === 'string') {
+      return xss(val);
+    }
+    if (val !== null && typeof val === 'object') {
+      for (const key of Object.keys(val)) {
+        val[key] = sanitizeValue(val[key]);
+      }
+    }
+    return val;
+  };
+
+  if (req.body) req.body = sanitizeValue(req.body);
+  if (req.query) req.query = sanitizeValue(req.query);
+  if (req.params) req.params = sanitizeValue(req.params);
+
+  next();
+};
 
 async function getSigningKey(kid) {
   if (!jwksClient || !kid) return null;

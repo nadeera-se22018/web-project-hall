@@ -7,6 +7,7 @@ import ProjectForm from './ProjectForm';
 import ThumbnailUpload from './ThumbnailUpload';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { sanitizeText } from '../lib/sanitize';
 
 export default function StudentProfile({ userId, onSelectAuthor }) {
   const { userProfile } = useAuth();
@@ -26,7 +27,6 @@ export default function StudentProfile({ userId, onSelectAuthor }) {
   useEffect(() => {
     fetchProfile();
     const checkFollow = () => {
-      // follow is checked/updated in ProjectCard, we initialize from local storage if available
       const key = `followed_${userProfile?.id}_${userId}`;
       setFollowing(!!localStorage.getItem(key));
     };
@@ -60,6 +60,8 @@ export default function StudentProfile({ userId, onSelectAuthor }) {
   const { user, projects, follower_count } = data;
   const isMe = userProfile?.id === user.id;
   const canFollow = userProfile && userProfile.permissions?.includes('users:follow') && !isMe;
+  const safeName = sanitizeText(user.name);
+  const safeEmail = sanitizeText(user.email);
 
   return (
     <div className="space-y-6">
@@ -67,11 +69,11 @@ export default function StudentProfile({ userId, onSelectAuthor }) {
         <div className="flex items-center gap-4">
           <Avatar className="h-14 w-14 border-2 border-primary/20">
             <AvatarImage src={user.avatar_url} />
-            <AvatarFallback className="text-lg">{user.name?.slice(0,2).toUpperCase()}</AvatarFallback>
+            <AvatarFallback className="text-lg">{safeName?.slice(0,2).toUpperCase()}</AvatarFallback>
           </Avatar>
           <div className="space-y-1">
-            <h2 className="text-lg font-bold leading-none">{user.name}</h2>
-            <p className="text-xs text-muted-foreground">{user.email}</p>
+            <h2 className="text-lg font-bold leading-none">{safeName}</h2>
+            <p className="text-xs text-muted-foreground">{safeEmail}</p>
             <p className="text-[10px] text-primary font-semibold">{follower_count} {follower_count === 1 ? 'Follower' : 'Followers'}</p>
           </div>
         </div>

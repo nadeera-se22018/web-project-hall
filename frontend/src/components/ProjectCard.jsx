@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Heart, UserPlus, UserMinus, Pencil, Trash } from '@phosphor-icons/react';
 import api, { API_URL } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { sanitizeText } from '../lib/sanitize';
 
 export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor, isOwner }) {
   const { userProfile } = useAuth();
@@ -29,7 +30,6 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor,
         localStorage.removeItem(storageKey);
       }
     } catch (err) {
-      // Handled by API interceptor
     }
   };
 
@@ -38,18 +38,21 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor,
       const { data } = await api.post(`/api/users/${project.author_id}/follow`);
       setFollowing(data.following);
     } catch (err) {
-      // Handled by API interceptor
     }
   };
 
   const showFollow = userProfile && userProfile.permissions?.includes('users:follow') && project.author_id !== userProfile.id;
   const imageUrl = project.thumbnail_url ? `${API_URL}${project.thumbnail_url}` : null;
+  const safeTitle = sanitizeText(project.title);
+  const safeDescription = sanitizeText(project.description);
+  const safeAuthorName = sanitizeText(project.author_name);
+  const safeAuthorEmail = sanitizeText(project.author_email);
 
   return (
     <Card className="flex flex-col h-full bg-card overflow-hidden transition-all hover:border-primary/45 py-0">
       <div className="h-44 w-full bg-accent/15 flex items-center justify-center border-b border-border overflow-hidden relative">
         {imageUrl ? (
-          <img src={imageUrl} alt={project.title} className="h-full w-full object-cover transition-transform hover:scale-105 duration-300" />
+          <img src={imageUrl} alt={safeTitle} className="h-full w-full object-cover transition-transform hover:scale-105 duration-300" />
         ) : (
           <span className="text-xs text-muted-foreground uppercase tracking-widest">No Thumbnail</span>
         )}
@@ -64,21 +67,21 @@ export default function ProjectCard({ project, onEdit, onDelete, onSelectAuthor,
         )}
       </div>
       <CardHeader className="px-4">
-        <CardTitle className="text-base font-bold line-clamp-1 my-0">{project.title}</CardTitle>
+        <CardTitle className="text-base font-bold line-clamp-1 my-0">{safeTitle}</CardTitle>
       </CardHeader>
       <CardContent className="px-4 pt-0 pb-2 grow">
-        <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">{project.description}</p>
+        <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">{safeDescription}</p>
       </CardContent>
       <CardFooter className="flex flex-col gap-3 p-4 pt-2 border-t border-border/40 mt-auto">
         <div className="flex w-full items-center justify-between">
           <button onClick={() => onSelectAuthor(project.author_id)} className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity">
             <Avatar className="h-6 w-6">
               <AvatarImage src={project.author_avatar} />
-              <AvatarFallback className="text-[9px]">{project.author_name?.slice(0, 2).toUpperCase()}</AvatarFallback>
+              <AvatarFallback className="text-[9px]">{safeAuthorName?.slice(0, 2).toUpperCase()}</AvatarFallback>
             </Avatar>
             <div className="flex flex-col">
-              <span className="text-[11px] font-semibold leading-none">{project.author_name}</span>
-              <span className="text-[9px] text-muted-foreground mt-0.5">{project.author_email}</span>
+              <span className="text-[11px] font-semibold leading-none">{safeAuthorName}</span>
+              <span className="text-[9px] text-muted-foreground mt-0.5">{safeAuthorEmail}</span>
             </div>
           </button>
           <div className="flex items-center gap-1.5">

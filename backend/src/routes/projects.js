@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
+import xss from 'xss';
 import { db } from '../db.js';
 import { getProjectsQuery } from '../db.js';
 import emitter from '../events.js';
@@ -70,13 +71,15 @@ router.post('/', authenticateToken, requirePermission('projects:create'), async 
     return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
   }
 
+  const cleanTitle = xss(title.trim());
+  const cleanDescription = xss(description.trim());
   const userId = req.user.dbId || parseInt(req.user.sub, 10);
 
   try {
     const [project] = await db('projects')
       .insert({
-        title: title.trim(),
-        description: description.trim(),
+        title: cleanTitle,
+        description: cleanDescription,
         visibility: visibility || 'private',
         created_by: userId,
       })
@@ -102,15 +105,24 @@ router.put('/:id', authenticateToken, requirePermission('projects:write'), requi
     return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
   }
 
+  const updatePayload = {
+    updated_at: db.fn.now(),
+  };
+
+  if (title !== undefined) {
+    updatePayload.title = xss(title.trim());
+  }
+  if (description !== undefined) {
+    updatePayload.description = xss(description.trim());
+  }
+  if (visibility !== undefined) {
+    updatePayload.visibility = visibility;
+  }
+
   try {
     const [project] = await db('projects')
       .where({ id })
-      .update({
-        title: title?.trim() || db.raw('title'),
-        description: description?.trim() || db.raw('description'),
-        visibility: visibility || db.raw('visibility'),
-        updated_at: db.fn.now(),
-      })
+      .update(updatePayload)
       .returning('*');
 
     res.json(project);

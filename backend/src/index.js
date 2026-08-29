@@ -24,7 +24,7 @@ import {
   revokeToken,
   generateTokenSet,
 } from './auth.js';
-import { authenticateToken } from './middleware.js';
+import { authenticateToken, sanitizeXSS } from './middleware.js';
 
 import projectsRouter from './routes/projects.js';
 import usersRouter    from './routes/users.js';
@@ -48,6 +48,7 @@ app.use(cookieParser());
 app.use(mongoSanitize({
   replaceWith: '_',
 }));
+app.use(sanitizeXSS);
 
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {

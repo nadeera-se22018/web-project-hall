@@ -9,6 +9,7 @@ import ProjectCard from './ProjectCard';
 import ProjectForm from './ProjectForm';
 import ThumbnailUpload from './ThumbnailUpload';
 import api from '../lib/api';
+import { sanitizeText } from '../lib/sanitize';
 
 export default function Profile({ onSelectAuthor }) {
   const { user: auth0User, isAuthenticated } = useAuth0();
@@ -18,11 +19,18 @@ export default function Profile({ onSelectAuthor }) {
   const [activeProject, setActiveProject] = useState(null);
   const [uploadProject, setUploadProject] = useState(null);
 
-  const username = auth0User?.nickname || auth0User?.preferred_username || auth0User?.username || auth0User?.['https://projecthall.com/username'] || (auth0User?.email ? auth0User.email.split('@')[0] : null) || userProfile?.name || 'N/A';
-  const name = auth0User?.name || `${auth0User?.given_name || ''} ${auth0User?.family_name || ''}`.trim() || userProfile?.name || 'Not Provided';
-  const email = auth0User?.email || userProfile?.email || 'Not Provided';
-  const contactNumber = auth0User?.phone_number || auth0User?.phone || auth0User?.['https://projecthall.com/phone_number'] || auth0User?.['https://projecthall.com/phone'] || auth0User?.user_metadata?.phone_number || auth0User?.user_metadata?.phone || null;
-  const organization = auth0User?.['https://projecthall.com/organization'] || auth0User?.['https://projecthall.com/org_name'] || auth0User?.organization || auth0User?.org_name || auth0User?.company || auth0User?.user_metadata?.organization || auth0User?.user_metadata?.company || null;
+  const rawUsername = auth0User?.nickname || auth0User?.preferred_username || auth0User?.username || auth0User?.['https://projecthall.com/username'] || (auth0User?.email ? auth0User.email.split('@')[0] : null) || userProfile?.name || 'N/A';
+  const rawName = auth0User?.name || `${auth0User?.given_name || ''} ${auth0User?.family_name || ''}`.trim() || userProfile?.name || 'Not Provided';
+  const rawEmail = auth0User?.email || userProfile?.email || 'Not Provided';
+  const rawContactNumber = auth0User?.phone_number || auth0User?.phone || auth0User?.['https://projecthall.com/phone_number'] || auth0User?.['https://projecthall.com/phone'] || auth0User?.user_metadata?.phone_number || auth0User?.user_metadata?.phone || null;
+  const rawOrganization = auth0User?.['https://projecthall.com/organization'] || auth0User?.['https://projecthall.com/org_name'] || auth0User?.organization || auth0User?.org_name || auth0User?.company || auth0User?.user_metadata?.organization || auth0User?.user_metadata?.company || null;
+
+  const username = sanitizeText(rawUsername);
+  const name = sanitizeText(rawName);
+  const email = sanitizeText(rawEmail);
+  const contactNumber = rawContactNumber ? sanitizeText(rawContactNumber) : null;
+  const organization = rawOrganization ? sanitizeText(rawOrganization) : null;
+
   const avatarUrl = auth0User?.picture || userProfile?.avatar_url;
   const isEmailVerified = auth0User?.email_verified ?? true;
 
