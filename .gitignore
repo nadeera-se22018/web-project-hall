@@ -1,1 +1,57 @@
+# Dependencies
 node_modules/
+package-lock.json.bak
+
+# Production build outputs
+dist/
+dist-ssr/
+build/
+
+# Environment configuration files
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+backend/.env
+backend/.env.local
+backend/.env.*.local
+!backend/.env.example
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+!frontend/.env.example
+
+# Cryptographic Keys & Secrets
+.keys/
+backend/.keys/
+*.pem
+*.key
+*.crt
+
+# Application Logs
+logs/
+backend/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Uploaded Assets / Media
+uploads/
+backend/uploads/
+
+# OS and IDE temporary files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

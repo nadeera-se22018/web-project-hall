@@ -1,10 +1,8 @@
+import 'dotenv/config';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { db } from './db.js';
 import keys from './keys.js';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const JWT_ISSUER = process.env.JWT_ISSUER || 'http://localhost:5000';
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'http://localhost:5173';

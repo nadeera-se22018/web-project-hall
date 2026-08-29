@@ -1,7 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
@@ -26,8 +26,6 @@ import { authenticateToken } from './middleware.js';
 import projectsRouter from './routes/projects.js';
 import usersRouter    from './routes/users.js';
 import adminRouter    from './routes/admin.js';
-
-dotenv.config();
 
 const app          = express();
 const PORT         = process.env.PORT || 5000;
