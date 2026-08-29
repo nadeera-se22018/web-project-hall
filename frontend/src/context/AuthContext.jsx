@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import api from '../lib/api';
+import api, { setAuthTokenGetter } from '../lib/api';
 
 const AuthContext = createContext(null);
 
@@ -14,7 +14,27 @@ export const AuthProvider = ({ children }) => {
     isLoading: isAuth0Loading,
     loginWithRedirect,
     logout: auth0Logout,
+    getAccessTokenSilently,
+    getIdTokenClaims,
   } = useAuth0();
+
+  useEffect(() => {
+    setAuthTokenGetter(async () => {
+      if (isAuth0Authenticated) {
+        try {
+          return await getAccessTokenSilently();
+        } catch {
+          try {
+            const claims = await getIdTokenClaims();
+            return claims?.__raw;
+          } catch {
+            return null;
+          }
+        }
+      }
+      return localStorage.getItem('access_token');
+    });
+  }, [isAuth0Authenticated, getAccessTokenSilently, getIdTokenClaims]);
 
   const syncAuth0User = useCallback(async (user) => {
     if (!user) return;

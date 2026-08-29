@@ -7,6 +7,8 @@ const router = Router();
 
 router.get('/:id/profile', authenticateToken, async (req, res) => {
   const userId = parseInt(req.params.id, 10);
+  const authUserId = req.user.dbId || parseInt(req.user.sub, 10);
+
   try {
     const user = await db('users as u')
       .leftJoin('roles as r', 'u.role_id', 'r.id')
@@ -18,8 +20,7 @@ router.get('/:id/profile', authenticateToken, async (req, res) => {
 
     let projectsQuery = getProjectsQuery(db).where('p.created_by', userId);
     
-    // Only show non-public projects if the user is viewing their own profile
-    if (userId !== parseInt(req.user.sub, 10)) {
+    if (userId !== authUserId) {
       projectsQuery = projectsQuery.andWhere('p.visibility', 'public');
     }
     
@@ -39,7 +40,7 @@ router.get('/:id/profile', authenticateToken, async (req, res) => {
 
 router.post('/:id/follow', authenticateToken, requirePermission('users:follow'), async (req, res) => {
   const studentId = parseInt(req.params.id, 10);
-  const followerId = parseInt(req.user.sub, 10);
+  const followerId = req.user.dbId || parseInt(req.user.sub, 10);
 
   if (studentId === followerId) {
     return res.status(400).json({ error: 'You cannot follow yourself' });
@@ -70,7 +71,7 @@ router.post('/:id/follow', authenticateToken, requirePermission('users:follow'),
 });
 
 router.get('/notifications', authenticateToken, async (req, res) => {
-  const userId = parseInt(req.user.sub, 10);
+  const userId = req.user.dbId || parseInt(req.user.sub, 10);
   try {
     const notifications = await db('notifications as n')
       .leftJoin('users as u', 'n.actor_id', 'u.id')
@@ -87,7 +88,7 @@ router.get('/notifications', authenticateToken, async (req, res) => {
 });
 
 router.patch('/notifications/read-all', authenticateToken, async (req, res) => {
-  const userId = parseInt(req.user.sub, 10);
+  const userId = req.user.dbId || parseInt(req.user.sub, 10);
   try {
     await db('notifications')
       .where({ recipient_id: userId, read: false })
@@ -101,7 +102,7 @@ router.patch('/notifications/read-all', authenticateToken, async (req, res) => {
 
 router.patch('/notifications/:id/read', authenticateToken, async (req, res) => {
   const notifId = parseInt(req.params.id, 10);
-  const userId = parseInt(req.user.sub, 10);
+  const userId = req.user.dbId || parseInt(req.user.sub, 10);
   try {
     const [notification] = await db('notifications')
       .where({ id: notifId, recipient_id: userId })

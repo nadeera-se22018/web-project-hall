@@ -8,7 +8,6 @@ import { authenticateToken, requirePermission, requireProjectOwnership } from '.
 
 const router = Router();
 
-// Store image uploads in /app/uploads, restricted to 5MB standard formats
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, '/app/uploads'),
   filename: (_req, file, cb) => {
@@ -38,7 +37,7 @@ router.get('/', authenticateToken, requirePermission('projects:read'), async (re
 
 router.get('/:id', authenticateToken, requirePermission('projects:read'), async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const userId = parseInt(req.user.sub, 10);
+  const userId = req.user.dbId || parseInt(req.user.sub, 10);
 
   try {
     const project = await getProjectsQuery(db).where('p.id', id).first();
@@ -50,7 +49,7 @@ router.get('/:id', authenticateToken, requirePermission('projects:read'), async 
         .where('u.id', userId)
         .first('r.name');
 
-      if (project.author_id !== userId && userRole?.name !== 'admin') {
+      if (project.author_id !== userId && userRole?.name !== 'admin' && req.user.role !== 'admin') {
         return res.status(403).json({ error: 'You do not have permission to view this project' });
       }
     }
@@ -71,13 +70,15 @@ router.post('/', authenticateToken, requirePermission('projects:create'), async 
     return res.status(400).json({ error: "visibility must be 'public' or 'private'" });
   }
 
+  const userId = req.user.dbId || parseInt(req.user.sub, 10);
+
   try {
     const [project] = await db('projects')
       .insert({
         title: title.trim(),
         description: description.trim(),
         visibility: visibility || 'private',
-        created_by: parseInt(req.user.sub, 10)
+        created_by: userId,
       })
       .returning('*');
 
@@ -108,7 +109,7 @@ router.put('/:id', authenticateToken, requirePermission('projects:write'), requi
         title: title?.trim() || db.raw('title'),
         description: description?.trim() || db.raw('description'),
         visibility: visibility || db.raw('visibility'),
-        updated_at: db.fn.now()
+        updated_at: db.fn.now(),
       })
       .returning('*');
 
@@ -154,10 +155,9 @@ router.post(
   }
 );
 
-// Toggle project like
 router.post('/:id/like', authenticateToken, requirePermission('projects:like'), async (req, res) => {
   const projectId = parseInt(req.params.id, 10);
-  const likerId = parseInt(req.user.sub, 10);
+  const likerId = req.user.dbId || parseInt(req.user.sub, 10);
 
   try {
     const project = await db('projects as p')
