@@ -5,12 +5,15 @@ import path from 'path';
 import session from 'express-session';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-
+import https from 'https';
+import http from 'http';
 import fs from 'fs';
 import cookieParser from 'cookie-parser';
+import { fileURLToPath } from 'url';
 
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
+import { getOrCreateSSLCert } from './ssl.js';
 import {
   sendOTP,
   verifyOTP,
@@ -22,17 +25,15 @@ import {
 } from './auth.js';
 import { authenticateToken } from './middleware.js';
 
-// Route modules
 import projectsRouter from './routes/projects.js';
 import usersRouter    from './routes/users.js';
 import adminRouter    from './routes/admin.js';
 
 const app          = express();
 const PORT         = process.env.PORT || 5000;
-const JWT_ISSUER   = process.env.JWT_ISSUER   || 'http://localhost:5000';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const JWT_ISSUER   = process.env.JWT_ISSUER   || 'https://localhost:5000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://localhost:5173';
 
-// Determine uploads directory dynamically (Docker volume vs local fallback)
 const UPLOADS_DIR = process.env.UPLOADS_DIR || 
   (fs.existsSync('/app/uploads') ? '/app/uploads' : path.join(process.cwd(), 'uploads'));
 
@@ -40,9 +41,6 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// ----------------------------------------------------------------
-// Core Middleware
-// ----------------------------------------------------------------
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
@@ -50,28 +48,26 @@ app.use(cookieParser());
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 15 * 60 * 1000, // 15 mins
+    secure: true,
+    sameSite: 'none',
+    maxAge: 15 * 60 * 1000,
   });
 
   res.cookie('refresh_token', tokenSet.refresh_token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    secure: true,
+    sameSite: 'none',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
 
-// Serve uploaded thumbnails as static files
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Session — only for the Google OAuth round-trip (5-min cookie)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev_secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 5 * 60 * 1000 },
+  cookie: { secure: true, sameSite: 'none', maxAge: 5 * 60 * 1000 },
 }));
 
 app.use(passport.initialize());
@@ -79,14 +75,11 @@ app.use(passport.session());
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
-// ----------------------------------------------------------------
-// Google OAuth2 Strategy
-// ----------------------------------------------------------------
 passport.use(new GoogleStrategy(
   {
     clientID:     process.env.GOOGLE_CLIENT_ID || 'mock-client-id',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'mock-client-secret',
-    callbackURL:  process.env.GOOGLE_CALLBACK_URL,
+    callbackURL:  process.env.GOOGLE_CALLBACK_URL || 'https://localhost:5000/api/auth/google/callback',
   },
   async (_at, _rt, profile, done) => {
     try {
@@ -114,9 +107,6 @@ passport.use(new GoogleStrategy(
   }
 ));
 
-// ----------------------------------------------------------------
-// Auth — Public Endpoints
-// ----------------------------------------------------------------
 app.post('/api/auth/otp/send', async (req, res) => {
   try { res.json(await sendOTP(req.body.email)); }
   catch (e) { res.status(400).json({ error: e.message }); }
@@ -177,9 +167,6 @@ app.post('/api/auth/revoke', async (req, res) => {
   }
 });
 
-// ----------------------------------------------------------------
-// Google OAuth Routes
-// ----------------------------------------------------------------
 app.get('/api/auth/google',
   passport.authenticate('google', { scope: ['openid', 'email', 'profile'] })
 );
@@ -197,9 +184,6 @@ app.get('/api/auth/google/callback',
   }
 );
 
-// ----------------------------------------------------------------
-// OIDC Discovery & JWKS
-// ----------------------------------------------------------------
 app.get('/api/auth/.well-known/openid-configuration', (_req, res) => {
   res.json({
     issuer: JWT_ISSUER,
@@ -220,9 +204,6 @@ app.get('/api/auth/jwks.json', (_req, res) => {
   res.json({ keys: [keys.jwk] });
 });
 
-// ----------------------------------------------------------------
-// Profile
-// ----------------------------------------------------------------
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const user = await db('users as u')
@@ -242,26 +223,20 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
-// ----------------------------------------------------------------
-// Feature Routers
-// ----------------------------------------------------------------
 app.use('/api/projects', projectsRouter);
 app.use('/api/users',    usersRouter);
 app.use('/api/admin',    adminRouter);
 
-// ----------------------------------------------------------------
-// Start
-// ----------------------------------------------------------------
-import { fileURLToPath } from 'url';
-
 const startServer = async () => {
   try {
     await initializeDatabase();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running at http://localhost:${PORT}`);
-      console.log(`🔐 OIDC: http://localhost:${PORT}/api/auth/.well-known/openid-configuration`);
-      console.log(`🔑 JWKS: http://localhost:${PORT}/api/auth/jwks.json`);
-      console.log(`🌐 Google OAuth: http://localhost:${PORT}/api/auth/google`);
+    const ssl = await getOrCreateSSLCert();
+    const server = https.createServer(ssl, app);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running securely at https://localhost:${PORT}`);
+      console.log(`🔐 OIDC: https://localhost:${PORT}/api/auth/.well-known/openid-configuration`);
+      console.log(`🔑 JWKS: https://localhost:${PORT}/api/auth/jwks.json`);
+      console.log(`🌐 Google OAuth: https://localhost:${PORT}/api/auth/google`);
     });
   } catch (err) {
     console.error('❌ Failed to start server:', err);

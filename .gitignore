@@ -27,6 +27,8 @@ frontend/.env.*.local
 # Cryptographic Keys & Secrets
 .keys/
 backend/.keys/
+.certs/
+backend/.certs/
 *.pem
 *.key
 *.crt

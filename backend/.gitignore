@@ -7,10 +7,12 @@ node_modules/
 .env.*.local
 !.env.example
 
-# RSA Keys
+# RSA Keys & SSL Certs
 .keys/
+.certs/
 *.pem
 *.key
+*.crt
 
 # Logs & Uploads
 logs/
