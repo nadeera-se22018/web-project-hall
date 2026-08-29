@@ -9,6 +9,7 @@ import https from 'https';
 import http from 'http';
 import fs from 'fs';
 import cookieParser from 'cookie-parser';
+import mongoSanitize from 'express-mongo-sanitize';
 import { fileURLToPath } from 'url';
 
 import { initializeDatabase, db } from './db.js';
@@ -44,6 +45,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 app.use(cors({ origin: FRONTEND_URL, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
+app.use(mongoSanitize({
+  replaceWith: '_',
+}));
 
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {
@@ -206,13 +210,14 @@ app.get('/api/auth/jwks.json', (_req, res) => {
 
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
+    const userId = req.user.dbId || parseInt(req.user.sub, 10);
     const user = await db('users as u')
       .leftJoin('roles as r', 'u.role_id', 'r.id')
       .leftJoin('role_permissions as rp', 'r.id', 'rp.role_id')
       .leftJoin('permissions as p', 'rp.permission_id', 'p.id')
       .select('u.id', 'u.email', 'u.name', 'u.avatar_url', 'r.name as role')
       .select(db.raw(`COALESCE(ARRAY_AGG(p.name) FILTER (WHERE p.name IS NOT NULL), '{}') as permissions`))
-      .where('u.id', parseInt(req.user.sub, 10))
+      .where('u.id', userId)
       .groupBy('u.id', 'r.name')
       .first();
 
