@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Header from './Header';
 import ProjectsFeed from './ProjectsFeed';
 import StudentProfile from './StudentProfile';
+import Profile from './Profile';
 import AdminPanel from './AdminPanel';
 import NotificationsPanel from './NotificationsPanel';
 import api from '../lib/api';
@@ -37,7 +38,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchNotifs();
-    const interval = setInterval(fetchNotifs, 15000); // Check every 15s
+    const interval = setInterval(fetchNotifs, 15000);
     return () => clearInterval(interval);
   }, []);
 
@@ -54,7 +55,7 @@ export default function Dashboard() {
 
       <main className="mx-auto w-full max-w-7xl grow px-4 py-8 sm:px-6 lg:px-8">
         {tab === 'feed' && <ProjectsFeed onSelectAuthor={selectAuthor} />}
-        {tab === 'my-profile' && <StudentProfile userId={userProfile.id} onSelectAuthor={selectAuthor} />}
+        {(tab === 'profile' || tab === 'my-profile') && <Profile onSelectAuthor={selectAuthor} />}
         {tab === 'profile-view' && <StudentProfile userId={selectedAuthor} onSelectAuthor={selectAuthor} />}
         {tab === 'admin' && <AdminPanel onSelectAuthor={selectAuthor} />}
       </main>
