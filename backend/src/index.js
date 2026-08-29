@@ -13,8 +13,10 @@ import mongoSanitize from 'express-mongo-sanitize';
 import crypto from 'crypto';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import morgan from 'morgan';
 import { fileURLToPath } from 'url';
 
+import logger, { morganStream } from './logger.js';
 import { initializeDatabase, db } from './db.js';
 import keys from './keys.js';
 import { getOrCreateSSLCert } from './ssl.js';
@@ -74,6 +76,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      logger.warn('Blocked by CORS policy', { origin });
       callback(new Error('Blocked by CORS policy'));
     }
   },
@@ -83,6 +86,8 @@ app.use(cors({
   exposedHeaders: ['X-CSRF-Token', 'X-XSRF-Token'],
   maxAge: 86400,
 }));
+
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms', { stream: morganStream }));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -182,8 +187,10 @@ passport.use(new GoogleStrategy(
           .returning('*');
       }
       
+      logger.info('Google OAuth login success', { email: user.email, userId: user.id });
       return done(null, user);
     } catch (err) {
+      logger.error('Google OAuth error', { error: err.message });
       return done(err);
     }
   }
@@ -201,16 +208,24 @@ app.get('/api/auth/csrf-token', (req, res) => {
 });
 
 app.post('/api/auth/otp/send', async (req, res) => {
-  try { res.json(await sendOTP(req.body.email)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const result = await sendOTP(req.body.email);
+    logger.info('OTP requested', { email: req.body.email });
+    res.json(result);
+  } catch (e) {
+    logger.warn('OTP request failed', { email: req.body.email, error: e.message });
+    res.status(400).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/otp/verify', async (req, res) => {
   try {
     const tokens = await verifyOTP(req.body.email, req.body.code);
     setAuthCookies(res, tokens);
+    logger.info('OTP verification succeeded', { email: req.body.email });
     res.json({ message: 'OTP verification successful' });
   } catch (e) {
+    logger.warn('OTP verification failed', { email: req.body.email, error: e.message });
     res.status(400).json({ error: e.message });
   }
 });
@@ -219,8 +234,10 @@ app.post('/api/auth/signup', async (req, res) => {
   try {
     const tokens = await signupWithPassword(req.body.email, req.body.password, req.body.role_id || 3);
     setAuthCookies(res, tokens);
+    logger.info('User signup successful', { email: req.body.email });
     res.status(201).json({ message: 'Signup successful' });
   } catch (e) {
+    logger.warn('User signup failed', { email: req.body.email, error: e.message });
     res.status(400).json({ error: e.message });
   }
 });
@@ -229,8 +246,10 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const tokens = await loginWithPassword(req.body.email, req.body.password);
     setAuthCookies(res, tokens);
+    logger.info('User login successful', { email: req.body.email });
     res.json({ message: 'Login successful' });
   } catch (e) {
+    logger.warn('User login failed', { email: req.body.email, error: e.message });
     res.status(401).json({ error: e.message });
   }
 });
@@ -242,6 +261,7 @@ app.post('/api/auth/refresh', async (req, res) => {
     setAuthCookies(res, tokens);
     res.json({ message: 'Tokens refreshed successfully' });
   } catch (e) {
+    logger.warn('Token refresh failed', { error: e.message });
     res.status(401).json({ error: e.message });
   }
 });
@@ -254,8 +274,10 @@ app.post('/api/auth/revoke', async (req, res) => {
     }
     res.clearCookie('access_token');
     res.clearCookie('refresh_token');
+    logger.info('Token revocation requested');
     res.json({ message: 'Token successfully revoked' });
   } catch (e) {
+    logger.error('Token revocation failed', { error: e.message });
     res.status(400).json({ error: e.message });
   }
 });
@@ -272,6 +294,7 @@ app.get('/api/auth/google/callback',
       setAuthCookies(res, tokenSet);
       res.redirect(`${FRONTEND_URL}/auth/callback`);
     } catch (err) {
+      logger.error('Google callback error', { error: err.message });
       res.redirect(`${FRONTEND_URL}/login?error=oauth_failed`);
     }
   }
@@ -313,6 +336,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {
+    logger.error('Error fetching /api/auth/me', { error: err.message });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -321,19 +345,27 @@ app.use('/api/projects', projectsRouter);
 app.use('/api/users',    usersRouter);
 app.use('/api/admin',    adminRouter);
 
+app.use((err, req, res, _next) => {
+  logger.error('Unhandled server error', {
+    error: err.message,
+    stack: err.stack,
+    path: req.originalUrl,
+    method: req.method,
+    ip: req.ip,
+  });
+  res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+});
+
 const startServer = async () => {
   try {
     await initializeDatabase();
     const ssl = await getOrCreateSSLCert();
     const server = https.createServer(ssl, app);
     server.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running securely at https://localhost:${PORT}`);
-      console.log(`🔐 OIDC: https://localhost:${PORT}/api/auth/.well-known/openid-configuration`);
-      console.log(`🔑 JWKS: https://localhost:${PORT}/api/auth/jwks.json`);
-      console.log(`🌐 Google OAuth: https://localhost:${PORT}/api/auth/google`);
+      logger.info(`Server running securely at https://localhost:${PORT}`);
     });
   } catch (err) {
-    console.error('❌ Failed to start server:', err);
+    logger.error('Failed to start server', { error: err.message });
     process.exit(1);
   }
 };

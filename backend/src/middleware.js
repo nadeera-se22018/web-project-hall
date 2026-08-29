@@ -4,6 +4,7 @@ import xss from 'xss';
 import crypto from 'crypto';
 import keys from './keys.js';
 import { db } from './db.js';
+import logger from './logger.js';
 
 const auth0Domain = process.env.AUTH0_DOMAIN;
 const jwksClient = auth0Domain
@@ -37,6 +38,7 @@ export const csrfProtection = (req, res, next) => {
     if (!isBearerAuth && !isExemptRoute && req.cookies?.access_token) {
       const clientToken = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || req.body?._csrf;
       if (!clientToken || clientToken !== csrfToken) {
+        logger.warn('CSRF validation failed', { ip: req.ip, path: req.originalUrl, method: req.method });
         return res.status(403).json({ error: 'CSRF token mismatch or missing' });
       }
     }
@@ -142,11 +144,15 @@ export const authenticateToken = async (req, res, next) => {
     token = authHeader && authHeader.split(' ')[1];
   }
 
-  if (!token) return res.status(401).json({ error: 'Access token required' });
+  if (!token) {
+    logger.warn('Authentication token missing', { ip: req.ip, path: req.originalUrl });
+    return res.status(401).json({ error: 'Access token required' });
+  }
 
   try {
     const decodedUnverified = jwt.decode(token, { complete: true });
     if (!decodedUnverified) {
+      logger.warn('Malformed access token provided', { ip: req.ip, path: req.originalUrl });
       return res.status(403).json({ error: 'Invalid access token format' });
     }
 
@@ -201,8 +207,10 @@ export const authenticateToken = async (req, res, next) => {
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
+      logger.info('Access token expired', { ip: req.ip, path: req.originalUrl });
       return res.status(401).json({ error: 'Access token expired', code: 'TOKEN_EXPIRED' });
     }
+    logger.warn('Invalid access token verification failure', { ip: req.ip, path: req.originalUrl, error: err.message });
     return res.status(403).json({ error: 'Invalid access token' });
   }
 };
@@ -210,6 +218,7 @@ export const authenticateToken = async (req, res, next) => {
 export const requirePermission = (permissionName) => {
   return async (req, res, next) => {
     if (!req.user || !req.user.sub) {
+      logger.warn('Unauthorized access attempt: No user', { ip: req.ip, path: req.originalUrl });
       return res.status(401).json({ error: 'Unauthorized: User not authenticated' });
     }
 
@@ -233,8 +242,16 @@ export const requirePermission = (permissionName) => {
         }
       }
 
+      logger.warn('Access forbidden: Missing permission', {
+        userId: req.user.sub,
+        requiredPermission: permissionName,
+        ip: req.ip,
+        path: req.originalUrl,
+      });
+
       return res.status(403).json({ error: `Forbidden: Missing required permission '${permissionName}'` });
     } catch (error) {
+      logger.error('Error checking permissions in middleware', { error: error.message });
       return res.status(500).json({ error: 'Internal server error checking permissions' });
     }
   };
@@ -243,6 +260,7 @@ export const requirePermission = (permissionName) => {
 export const requireRole = (roleName) => {
   return async (req, res, next) => {
     if (!req.user || !req.user.sub) {
+      logger.warn('Unauthorized access attempt: No user for role check', { ip: req.ip, path: req.originalUrl });
       return res.status(401).json({ error: 'Unauthorized: User not authenticated' });
     }
 
@@ -264,8 +282,17 @@ export const requireRole = (roleName) => {
         }
       }
 
+      logger.warn('Access forbidden: Role mismatch', {
+        userId: req.user.sub,
+        requiredRole: roleName,
+        currentRole: req.user.role,
+        ip: req.ip,
+        path: req.originalUrl,
+      });
+
       return res.status(403).json({ error: `Forbidden: Requires role '${roleName}'` });
     } catch (error) {
+      logger.error('Error checking role in middleware', { error: error.message });
       return res.status(500).json({ error: 'Internal server error checking role' });
     }
   };
@@ -276,6 +303,7 @@ export const requireProjectOwnership = async (req, res, next) => {
   const userId = req.user.dbId || parseInt(req.user.sub, 10);
 
   if (!projectId || !userId) {
+    logger.warn('Invalid project or user identifier in ownership check', { projectId, userId, ip: req.ip });
     return res.status(403).json({ error: 'Access denied: Invalid project or user identifier' });
   }
 
@@ -286,11 +314,18 @@ export const requireProjectOwnership = async (req, res, next) => {
     }
 
     if (project.created_by !== userId && req.user.role !== 'admin') {
+      logger.warn('Forbidden project modification attempt', {
+        userId,
+        projectId,
+        ownerId: project.created_by,
+        ip: req.ip,
+      });
       return res.status(403).json({ error: 'Access forbidden: You can only modify or delete your own submissions' });
     }
 
     next();
   } catch (err) {
+    logger.error('Failed to verify project ownership', { error: err.message, projectId, userId });
     return res.status(500).json({ error: 'Failed to verify project ownership' });
   }
 };

@@ -1,68 +1,89 @@
 import fs from 'fs';
 import path from 'path';
+import winston from 'winston';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const LOG_DIR = process.env.LOG_DIR || path.join(__dirname, '../logs');
-const LOG_FILE = path.join(LOG_DIR, 'app.log');
 
-// Ensure logs directory exists
 if (!fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
-const LOG_LEVELS = {
-  ERROR: 0,
-  WARN: 1,
-  INFO: 2,
-  DEBUG: 3,
-};
+const SENSITIVE_KEYS = [
+  'password',
+  'password_hash',
+  'token',
+  'access_token',
+  'refresh_token',
+  'id_token',
+  'authorization',
+  'secret',
+  'session_secret',
+  'jwt_secret',
+  'cookie',
+  'code',
+];
 
-const CURRENT_LEVEL = LOG_LEVELS[process.env.LOG_LEVEL?.toUpperCase()] ?? LOG_LEVELS.INFO;
+const maskSensitiveData = winston.format((info) => {
+  const maskObject = (obj) => {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(maskObject);
 
-function formatMessage(level, message, meta = {}) {
-  const timestamp = new Date().toISOString();
-  const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-  return `[${timestamp}] [${level}] ${message}${metaStr}`;
-}
-
-function writeLog(entry) {
-  fs.appendFileSync(LOG_FILE, entry + '\n', 'utf8');
-}
-
-const logger = {
-  error(message, meta) {
-    if (CURRENT_LEVEL >= LOG_LEVELS.ERROR) {
-      const entry = formatMessage('ERROR', message, meta);
-      console.error(entry);
-      writeLog(entry);
+    const copy = { ...obj };
+    for (const key of Object.keys(copy)) {
+      const lowerKey = key.toLowerCase();
+      if (SENSITIVE_KEYS.some((sensitive) => lowerKey.includes(sensitive))) {
+        copy[key] = '[REDACTED]';
+      } else if (typeof copy[key] === 'object' && copy[key] !== null) {
+        copy[key] = maskObject(copy[key]);
+      }
     }
-  },
+    return copy;
+  };
 
-  warn(message, meta) {
-    if (CURRENT_LEVEL >= LOG_LEVELS.WARN) {
-      const entry = formatMessage('WARN', message, meta);
-      console.warn(entry);
-      writeLog(entry);
-    }
-  },
+  const masked = maskObject(info);
+  return masked;
+});
 
-  info(message, meta) {
-    if (CURRENT_LEVEL >= LOG_LEVELS.INFO) {
-      const entry = formatMessage('INFO', message, meta);
-      console.log(entry);
-      writeLog(entry);
-    }
-  },
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+    maskSensitiveData(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'project-hall-backend' },
+  transports: [
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'error.log'),
+      level: 'error',
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 5,
+    }),
+    new winston.transports.File({
+      filename: path.join(LOG_DIR, 'combined.log'),
+      maxsize: 10 * 1024 * 1024,
+      maxFiles: 5,
+    }),
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+          const metaString = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
+          return `[${timestamp}] [${level}]: ${message}${metaString}`;
+        })
+      ),
+    }),
+  ],
+});
 
-  debug(message, meta) {
-    if (CURRENT_LEVEL >= LOG_LEVELS.DEBUG) {
-      const entry = formatMessage('DEBUG', message, meta);
-      console.log(entry);
-      writeLog(entry);
-    }
+export const morganStream = {
+  write: (message) => {
+    logger.info(message.trim());
   },
 };
 
