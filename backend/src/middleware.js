@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import xss from 'xss';
+import crypto from 'crypto';
 import keys from './keys.js';
 import { db } from './db.js';
 
@@ -13,6 +14,36 @@ const jwksClient = auth0Domain
       jwksUri: `https://${auth0Domain}/.well-known/jwks.json`,
     })
   : null;
+
+export const csrfProtection = (req, res, next) => {
+  let csrfToken = req.cookies?.['XSRF-TOKEN'];
+  if (!csrfToken) {
+    csrfToken = crypto.randomBytes(32).toString('hex');
+    res.cookie('XSRF-TOKEN', csrfToken, {
+      secure: true,
+      sameSite: 'none',
+      httpOnly: false,
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+  }
+
+  req.csrfToken = csrfToken;
+
+  const stateChangingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+  if (stateChangingMethods.includes(req.method)) {
+    const isBearerAuth = req.headers['authorization'] && req.headers['authorization'].startsWith('Bearer ');
+    const isExemptRoute = req.path.startsWith('/api/auth/google') || req.path.startsWith('/api/auth/otp');
+
+    if (!isBearerAuth && !isExemptRoute && req.cookies?.access_token) {
+      const clientToken = req.headers['x-csrf-token'] || req.headers['x-xsrf-token'] || req.body?._csrf;
+      if (!clientToken || clientToken !== csrfToken) {
+        return res.status(403).json({ error: 'CSRF token mismatch or missing' });
+      }
+    }
+  }
+
+  next();
+};
 
 export const sanitizeXSS = (req, _res, next) => {
   const sanitizeValue = (val) => {

@@ -10,6 +10,7 @@ import http from 'http';
 import fs from 'fs';
 import cookieParser from 'cookie-parser';
 import mongoSanitize from 'express-mongo-sanitize';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 import { initializeDatabase, db } from './db.js';
@@ -24,7 +25,7 @@ import {
   revokeToken,
   generateTokenSet,
 } from './auth.js';
-import { authenticateToken, sanitizeXSS } from './middleware.js';
+import { authenticateToken, sanitizeXSS, csrfProtection } from './middleware.js';
 
 import projectsRouter from './routes/projects.js';
 import usersRouter    from './routes/users.js';
@@ -42,13 +43,34 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }));
+const allowedOrigins = [
+  FRONTEND_URL,
+  'https://localhost:5173',
+  'https://127.0.0.1:5173',
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Blocked by CORS policy'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-XSRF-Token', 'X-Requested-With'],
+  exposedHeaders: ['X-CSRF-Token', 'X-XSRF-Token'],
+  maxAge: 86400,
+}));
+
 app.use(express.json());
 app.use(cookieParser());
 app.use(mongoSanitize({
   replaceWith: '_',
 }));
 app.use(sanitizeXSS);
+app.use(csrfProtection);
 
 const setAuthCookies = (res, tokenSet) => {
   res.cookie('access_token', tokenSet.access_token, {
@@ -72,7 +94,12 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'dev_secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: true, sameSite: 'none', maxAge: 5 * 60 * 1000 },
+  cookie: {
+    secure: true,
+    sameSite: 'none',
+    httpOnly: true,
+    maxAge: 5 * 60 * 1000,
+  },
 }));
 
 app.use(passport.initialize());
@@ -111,6 +138,17 @@ passport.use(new GoogleStrategy(
     }
   }
 ));
+
+app.get('/api/auth/csrf-token', (req, res) => {
+  let token = req.cookies?.['XSRF-TOKEN'] || crypto.randomBytes(32).toString('hex');
+  res.cookie('XSRF-TOKEN', token, {
+    secure: true,
+    sameSite: 'none',
+    httpOnly: false,
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+  res.json({ csrfToken: token });
+});
 
 app.post('/api/auth/otp/send', async (req, res) => {
   try { res.json(await sendOTP(req.body.email)); }

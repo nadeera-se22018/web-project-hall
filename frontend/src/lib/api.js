@@ -8,9 +8,16 @@ export const setAuthTokenGetter = (fn) => {
   authTokenGetter = fn;
 };
 
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+  return match ? decodeURIComponent(match[3]) : null;
+}
+
 const api = axios.create({
   baseURL: API_URL,
   withCredentials: true,
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-CSRF-Token',
 });
 
 api.interceptors.request.use(
@@ -27,6 +34,12 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    const csrfToken = getCookie('XSRF-TOKEN');
+    if (csrfToken && !config.headers['X-CSRF-Token']) {
+      config.headers['X-CSRF-Token'] = csrfToken;
+    }
+
     return config;
   },
   (error) => {
